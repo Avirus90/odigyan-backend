@@ -1,16 +1,21 @@
 {
   "name": "odigyan-backend",
   "version": "1.0.0",
-  "description": "Backend for Odigyan EdTech Platform",
-  "main": "index.js",
+  "description": "Backend API for Odigyan EdTech Platform",
   "scripts": {
-    "start": "node index.js"
+    "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
     "node-telegram-bot-api": "^0.61.0",
     "firebase-admin": "^11.11.0",
-    "axios": "^1.6.2"
+    "axios": "^1.6.2",
+    "multer": "^1.4.5-lts.1",
+    "body-parser": "^1.20.2",
+    "dotenv": "^16.3.1"
+  },
+  "engines": {
+    "node": "18.x"
   }
 }
