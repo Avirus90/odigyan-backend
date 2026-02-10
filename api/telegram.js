@@ -1,176 +1,168 @@
-const express = require('express');
-const router = express.Router();
-const TelegramService = require('../utils/telegram');
-const { formatResponse } = require('../utils/helpers');
-const { verifyToken, isAuthenticated } = require('../middleware/auth');
+const TelegramBot = require('node-telegram-bot-api');
 
-/**
- * @route   GET /api/telegram/files
- * @desc    Get files from Telegram channel
- * @access  Private
- */
-router.get('/files', verifyToken, isAuthenticated, async (req, res) => {
-    try {
-        const { courseId, type = 'all' } = req.query;
-        
-        const files = await TelegramService.getChannelFiles(courseId, type);
-        
-        res.json(formatResponse(true, files));
-        
-    } catch (error) {
-        console.error('Get Telegram files error:', error);
-        res.status(500).json(
-            formatResponse(false, null, 'Failed to fetch files from Telegram')
-        );
-    }
-});
+// Initialize Telegram Bot
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: false });
 
-/**
- * @route   GET /api/telegram/mocktest
- * @desc    Get mock test from Telegram
- * @access  Private
- */
-router.get('/mocktest', verifyToken, isAuthenticated, async (req, res) => {
-    try {
-        const { courseId } = req.query;
-        
-        const files = await TelegramService.getChannelFiles(courseId, 'mocktest');
-        
-        if (!files.mockTests || files.mockTests.length === 0) {
-            return res.status(404).json(
-                formatResponse(false, null, 'No mock tests found')
-            );
+module.exports = async (req, res) => {
+  // CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  try {
+    // GET channel info or files
+    if (req.method === 'GET') {
+      const { action, fileId, channelId = '-1003710322105' } = req.query;
+
+      if (action === 'getChannelInfo') {
+        try {
+          const chat = await bot.getChat(channelId);
+          const membersCount = await bot.getChatMembersCount(channelId);
+          
+          return res.status(200).json({
+            success: true,
+            data: {
+              id: chat.id,
+              title: chat.title,
+              description: chat.description,
+              membersCount: membersCount,
+              username: chat.username,
+              inviteLink: chat.invite_link
+            }
+          });
+        } catch (error) {
+          return res.status(500).json({
+            success: false,
+            error: 'Failed to get channel info'
+          });
         }
-        
-        // Parse the first mock test
-        const mockTestContent = files.mockTests[0].content;
-        const questions = TelegramService.parseMockTest(mockTestContent);
-        
-        res.json(formatResponse(true, {
-            questions,
-            totalQuestions: questions.length,
-            source: 'Telegram Channel',
-            parsedAt: new Date().toISOString()
-        }));
-        
-    } catch (error) {
-        console.error('Get mock test error:', error);
-        res.status(500).json(
-            formatResponse(false, null, 'Failed to fetch mock test')
-        );
-    }
-});
+      }
 
-/**
- * @route   GET /api/telegram/current-affairs
- * @desc    Get current affairs from Telegram
- * @access  Private
- */
-router.get('/current-affairs', verifyToken, isAuthenticated, async (req, res) => {
-    try {
-        const { courseId, period = 'daily', limit = 20 } = req.query;
-        
-        const files = await TelegramService.getChannelFiles(courseId, 'currentAffairs');
-        
-        let currentAffairs = files.currentAffairs || [];
-        
-        // Filter by period if specified
-        if (period !== 'all') {
-            currentAffairs = currentAffairs.filter(ca => {
-                const caption = (ca.caption || '').toLowerCase();
-                return caption.includes(period);
-            });
+      if (action === 'getFile' && fileId) {
+        try {
+          const file = await bot.getFile(fileId);
+          const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+          
+          return res.status(200).json({
+            success: true,
+            data: {
+              fileId: file.file_id,
+              fileUniqueId: file.file_unique_id,
+              fileSize: file.file_size,
+              filePath: file.file_path,
+              fileUrl: fileUrl
+            }
+          });
+        } catch (error) {
+          return res.status(404).json({
+            success: false,
+            error: 'File not found'
+          });
         }
-        
-        // Sort by date (newest first)
-        currentAffairs.sort((a, b) => b.date - a.date);
-        
-        // Limit results
-        currentAffairs = currentAffairs.slice(0, parseInt(limit));
-        
-        res.json(formatResponse(true, {
-            currentAffairs,
-            total: currentAffairs.length,
-            period
-        }));
-        
-    } catch (error) {
-        console.error('Get current affairs error:', error);
-        res.status(500).json(
-            formatResponse(false, null, 'Failed to fetch current affairs')
-        );
-    }
-});
+      }
 
-/**
- * @route   GET /api/telegram/file/:fileId
- * @desc    Get file URL from Telegram
- * @access  Private
- */
-router.get('/file/:fileId', verifyToken, isAuthenticated, async (req, res) => {
-    try {
-        const { fileId } = req.params;
-        
-        const fileURL = await TelegramService.getFileDirectURL(fileId);
-        
-        if (!fileURL) {
-            return res.status(404).json(
-                formatResponse(false, null, 'File not found')
-            );
+      if (action === 'getChannelFiles') {
+        try {
+          // Note: Telegram Bot API doesn't directly support listing channel files
+          // You'll need to store file IDs in your database when files are uploaded
+          return res.status(200).json({
+            success: true,
+            data: [],
+            message: 'File list would be retrieved from database'
+          });
+        } catch (error) {
+          return res.status(500).json({
+            success: false,
+            error: 'Failed to get channel files'
+          });
         }
-        
-        res.json(formatResponse(true, {
-            fileURL,
-            fileId,
-            expiresIn: '1 hour'
-        }));
-        
-    } catch (error) {
-        console.error('Get file URL error:', error);
-        res.status(500).json(
-            formatResponse(false, null, 'Failed to get file URL')
-        );
-    }
-});
+      }
 
-/**
- * @route   POST /api/telegram/send-notification
- * @desc    Send notification to Telegram channel (admin only)
- * @access  Private (Admin only)
- */
-router.post('/send-notification', verifyToken, async (req, res) => {
-    try {
-        // Check if user is admin
-        if (!req.user.isAdmin) {
-            return res.status(403).json(
-                formatResponse(false, null, 'Admin access required')
-            );
-        }
-        
-        const { message } = req.body;
-        
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid action or missing parameters'
+      });
+    }
+
+    // POST send message or file to channel
+    if (req.method === 'POST') {
+      const { action, message, fileId, caption } = req.body;
+
+      if (action === 'sendMessage') {
         if (!message) {
-            return res.status(400).json(
-                formatResponse(false, null, 'Message is required')
-            );
+          return res.status(400).json({
+            success: false,
+            error: 'Message is required'
+          });
         }
-        
-        const success = await TelegramService.sendMessage(message);
-        
-        if (success) {
-            res.json(formatResponse(true, {
-                message: 'Notification sent successfully'
-            }));
-        } else {
-            throw new Error('Failed to send notification');
-        }
-        
-    } catch (error) {
-        console.error('Send notification error:', error);
-        res.status(500).json(
-            formatResponse(false, null, 'Failed to send notification')
-        );
-    }
-});
 
-module.exports = router;
+        try {
+          const result = await bot.sendMessage('-1003710322105', message, {
+            parse_mode: 'HTML'
+          });
+
+          return res.status(200).json({
+            success: true,
+            message: 'Message sent successfully',
+            messageId: result.message_id
+          });
+        } catch (error) {
+          return res.status(500).json({
+            success: false,
+            error: 'Failed to send message'
+          });
+        }
+      }
+
+      if (action === 'sendFile') {
+        if (!fileId) {
+          return res.status(400).json({
+            success: false,
+            error: 'File ID is required'
+          });
+        }
+
+        try {
+          // Forward file from your private channel to bot's storage
+          const result = await bot.forwardMessage(
+            '-1003710322105',
+            '-1003710322105', // Same channel (forward to itself to get file ID)
+            parseInt(fileId)
+          );
+
+          return res.status(200).json({
+            success: true,
+            message: 'File sent successfully',
+            fileId: result.message_id
+          });
+        } catch (error) {
+          return res.status(500).json({
+            success: false,
+            error: 'Failed to send file'
+          });
+        }
+      }
+
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid action'
+      });
+    }
+
+    return res.status(405).json({
+      success: false,
+      error: 'Method not allowed'
+    });
+
+  } catch (error) {
+    console.error('Error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || 'Internal server error'
+    });
+  }
+};
